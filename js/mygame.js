@@ -1,20 +1,25 @@
-//Declare my variables
-
 var canvas;
 var context;
 var timer;
 var interval;
 var player;
-
-// Game status flags
 var inGrass = false;
 var encounter = false;
-
-// Transition variables
 var transitionActive = false;
 var bars = [];
 var barsInitialized = false;
 var resetGameTriggered = false;
+var gameState = "overworld";
+var enemyHP = 20;
+var playerHP = 20;
+var overworldSavedX = 0;
+var overworldSavedY = 0;
+var playerGuard = false;
+var enemyGuard = false;
+var playerPoison = 0;
+var enemyPoison = 0;
+var battleMessage = "A wild monster approached!";
+var attackMenuOpen = false;
 
 canvas = document.getElementById("canvas");
 context = canvas.getContext("2d");	
@@ -60,36 +65,81 @@ platform5.color = "#66ff33";
 goal = new GameObject({width:24, height:50, x:canvas.width-50, y:100, color:"#00ffff"});
 
 // Handle Menu Interaction Clicks during a Battle
-window.addEventListener("mousedown", function(e) {
-	if (gameState !== "battle") return;
+window.addEventListener("mousedown", function (e) {
+    if (gameState !== "battle") return;
 
-	// Calculate mouse positions relative to canvas
-	var rect = canvas.getBoundingClientRect();
-	var mouseX = e.clientX - rect.left;
-	var mouseY = e.clientY - rect.top;
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
 
-	// Simple click box detection matching our text layout zones
-	if (mouseY > canvas.height - 150) {
-		if (mouseX > canvas.width / 2 && mouseX < canvas.width * 0.75) {
-			if (mouseY < canvas.height - 70) {
-				// Clicked FIGHT
-				enemyHP -= 5; 
-				if (enemyHP <= 0) {
-					endBattleAndReturn();
-				}
-			} else {
-				// Clicked ITEM (Does nothing for now)
-			}
-		} else if (mouseX >= canvas.width * 0.75) {
-			if (mouseY < canvas.height - 70) {
-				// Clicked PARTY (Does nothing for now)
-			} else {
-				// Clicked RUN
-				endBattleAndReturn();
-			}
-		}
-	}
+    // === RIGHT CLICK closes attack menu ===
+    if (e.button === 2) {
+        attackMenuOpen = false;
+        battleMessage = "Choose an action:";
+        return;
+    }
+
+    // === ATTACK MENU OPEN ===
+    if (attackMenuOpen) {
+        // Attack buttons placed EXACTLY where Fight/Item/Party/Run text was
+        const attackButtons = [
+            { name: "strike", x1: canvas.width/2,       x2: canvas.width/2 + 200, y1: canvas.height - 130, y2: canvas.height - 90 },
+            { name: "guard",  x1: canvas.width/2,       x2: canvas.width/2 + 200, y1: canvas.height - 70,  y2: canvas.height - 30 },
+            { name: "heal",   x1: canvas.width*0.75,    x2: canvas.width*0.75 + 200, y1: canvas.height - 130, y2: canvas.height - 90 },
+            { name: "poison", x1: canvas.width*0.75,    x2: canvas.width*0.75 + 200, y1: canvas.height - 70,  y2: canvas.height - 30 }
+        ];
+
+        for (let atk of attackButtons) {
+            if (mouseX > atk.x1 && mouseX < atk.x2 && mouseY > atk.y1 && mouseY < atk.y2) {
+                attackMenuOpen = false;
+                playerAttack(atk.name);
+                return;
+            }
+        }
+
+        return; // ignore other clicks while attack menu is open
+    }
+
+    // === MAIN MENU ===
+    const fightX1 = canvas.width/2;
+    const fightX2 = canvas.width*0.75;
+    const topRowY1 = canvas.height - 150;
+    const fightY2 = canvas.height - 70;
+
+    if (mouseY > topRowY1) {
+
+        // FIGHT
+        if (mouseX > fightX1 && mouseX < fightX2 && mouseY < fightY2) {
+            attackMenuOpen = true;
+            battleMessage = "Choose an attack:";
+            return;
+        }
+
+        // ITEM
+        if (mouseX > fightX1 && mouseX < fightX2 && mouseY >= fightY2) {
+            battleMessage = "Items not implemented";
+            return;
+        }
+
+        // PARTY
+        if (mouseX >= fightX2 && mouseY < fightY2) {
+            battleMessage = "Party not implemented";
+            return;
+        }
+
+        // RUN
+        if (mouseX >= fightX2 && mouseY >= fightY2) {
+            endBattleAndReturn();
+            return;
+        }
+    }
 });
+
+
+
+// Prevent browser right-click menu
+window.addEventListener("contextmenu", e => e.preventDefault());
+
 
 // Helper function to return smoothly back to overworld map
 function endBattleAndReturn() {
@@ -107,7 +157,6 @@ function endBattleAndReturn() {
 
 var fX = .85;
 var fY = .85;
-
 var gravity = 0;
 
 interval = 1000/60;
@@ -124,6 +173,90 @@ function resetGameData() {
 	barsInitialized = false;
 	resetGameTriggered = false;
 	bars = [];
+}
+
+function playerAttack(type) {
+    if (type === "strike") {
+        var dmg = 5;
+        if (enemyGuard) dmg = 2;
+        enemyHP -= dmg;
+        battleMessage = "You used Strike! It dealt " + dmg + " damage!";
+        enemyGuard = false;
+    }
+
+    if (type === "guard") {
+        playerGuard = true;
+        battleMessage = "You brace yourself!";
+    }
+
+    if (type === "heal") {
+        playerHP += 6;
+        if (playerHP > 20) playerHP = 20;
+        battleMessage = "You healed!";
+    }
+
+    if (type === "poison") {
+        enemyPoison = 3;
+        battleMessage = "You poisoned the monster!";
+    }
+
+    // After player acts, monster takes a turn
+    setTimeout(monsterTurn, 600);
+}
+
+function monsterTurn() {
+    // Apply poison to monster
+    if (enemyPoison > 0) {
+        enemyHP -= 2;
+        enemyPoison--;
+        battleMessage = "Poison hurts the monster!";
+    }
+
+    if (enemyHP <= 0) {
+        endBattleAndReturn();
+        return;
+    }
+
+    // Monster chooses random move
+    var moves = ["strike", "guard", "heal", "poison"];
+    var choice = moves[Math.floor(Math.random() * moves.length)];
+
+    if (choice === "strike") {
+        var dmg = 4;
+        if (playerGuard) dmg = 1;
+        playerHP -= dmg;
+        battleMessage = "Monster used Strike! You took " + dmg + " damage!";
+        playerGuard = false;
+    }
+
+    if (choice === "guard") {
+        enemyGuard = true;
+        battleMessage = "Monster is guarding!";
+    }
+
+    if (choice === "heal") {
+        enemyHP += 4;
+        if (enemyHP > 20) enemyHP = 20;
+        battleMessage = "Monster healed!";
+    }
+
+    if (choice === "poison") {
+        playerPoison = 3;
+        battleMessage = "Monster poisoned you!";
+    }
+
+    // Apply poison to player
+    if (playerPoison > 0) {
+        playerHP -= 2;
+        playerPoison--;
+        battleMessage += " Poison hurts you!";
+    }
+
+    // Check defeat
+    if (playerHP <= 0) {
+        battleMessage = "You fainted!";
+        setTimeout(endBattleAndReturn, 1000);
+    }
 }
 
 function animate()
@@ -222,7 +355,7 @@ function animate()
 	player.drawRect();
 	goal.drawCircle();
 
-	// 7. [NEW] Cinematic Bar Transition Animation
+	// 7. Cinematic Bar Transition Animation
 	if (transitionActive) {
 		var totalBars = 8;
 		var barHeight = canvas.height / totalBars;
@@ -264,10 +397,108 @@ function animate()
 			}
 		}
 
-		// When total blackout is reached, reset the game state
-		if (allBarsFinished && !resetGameTriggered) {
-			resetGameTriggered = true;
-			resetGameData();
+	// When total blackout is reached, reset the game state
+	if (allBarsFinished && !resetGameTriggered) {
+    	resetGameTriggered = true;
+
+    	// Save overworld position
+    	overworldSavedX = player.x;
+    	overworldSavedY = player.y;
+
+    	// Reset enemy HP for new encounter
+    	enemyHP = 20;
+
+    	// Switch to battle
+   		gameState = "battle";
+
+    	// Reset bars for next time
+    	bars = [];
+    	barsInitialized = false;
+    	transitionActive = false;
 		}
 	}
+
+	function drawBattleScreen() {
+    // Background
+    	context.fillStyle = "#222";
+    	context.fillRect(0, 0, canvas.width, canvas.height);
+
+    // -------------------------
+    // ENEMY HP (Top-left)
+    // -------------------------
+    	context.fillStyle = "white";
+    	context.font = "24px Arial";
+    	context.fillText("Monster HP", 50, 50);
+
+    	context.fillStyle = "green";
+    	context.fillRect(50, 60, enemyHP * 5, 20);
+
+    	context.fillStyle = "white";
+    	context.fillText("L5", 50, 100);
+
+    // -------------------------
+    // TEAM MEMBER BOX (Bottom-left)
+    // -------------------------
+    	context.fillStyle = "green";
+    	context.fillRect(50, canvas.height - 350, 200, 200);
+
+    // -------------------------
+    // MONSTER BOX (Centered, in front)
+    // -------------------------
+    	context.fillStyle = "blue";
+    	context.fillRect(canvas.width/2 + 200, 50, 200, 200);
+
+    // -------------------------
+    // TEAM HP (Bottom-right corner)
+    // -------------------------
+    	context.fillStyle = "white";
+    	context.font = "24px Arial";
+    	context.fillText("Your Team HP", canvas.width - 250, canvas.height - 350);
+
+    	context.fillStyle = "green";
+    	context.fillRect(canvas.width - 250, canvas.height - 330, playerHP * 5, 20);
+
+		context.fillStyle = "white";
+		context.fillText("L5", canvas.width - 250, canvas.height - 290);
+
+    // -------------------------
+    // TEXT BOX
+    // -------------------------
+		context.fillStyle = "white";
+		context.fillRect(0, canvas.height - 150, canvas.width, 150);
+
+		context.fillStyle = "black";
+		context.font = "22px Arial";
+		context.fillText(battleMessage, 30, canvas.height - 110);
+
+	// If attack menu is open, draw attack options
+	if (attackMenuOpen) {
+		context.fillStyle = "black";
+		context.font = "26px Arial";
+
+		context.fillText("Strike", canvas.width/2 + 20, canvas.height - 110);
+		context.fillText("Guard",  canvas.width/2 + 20, canvas.height - 50);
+		context.fillText("Heal",   canvas.width * 0.75 + 20, canvas.height - 110);
+		context.fillText("Poison", canvas.width * 0.75 + 20, canvas.height - 50);
+    return;
+	}
+
+    // -------------------------
+    // MENU OPTIONS
+    // -------------------------
+		context.font = "28px Arial";
+
+		context.fillText("Fight", canvas.width/2 + 20, canvas.height - 110);
+		context.fillText("Item",  canvas.width/2 + 20, canvas.height - 50);
+
+		context.fillText("Party", canvas.width * 0.75 + 20, canvas.height - 110);
+		context.fillText("Run",   canvas.width * 0.75 + 20, canvas.height - 50);
+	}
+
+	if (gameState === "battle") {
+		context.clearRect(0, 0, canvas.width, canvas.height);
+		drawBattleScreen();
+    return;
+	}
+	
 }
